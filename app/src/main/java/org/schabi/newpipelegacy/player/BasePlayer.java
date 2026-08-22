@@ -44,6 +44,7 @@ import com.nostra13.universalimageloader.core.listener.ImageLoadingListener;
 import org.schabi.newpipelegacy.BuildConfig;
 import org.schabi.newpipelegacy.DownloaderImpl;
 import org.schabi.newpipelegacy.R;
+import org.schabi.newpipe.extractor.stream.Stream;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamType;
 import org.schabi.newpipe.extractor.stream.SubtitlesStream;
@@ -61,6 +62,10 @@ import org.videolan.libvlc.LibVLC;
 import org.videolan.libvlc.Media;
 import org.videolan.libvlc.MediaPlayer;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
@@ -200,6 +205,41 @@ public abstract class BasePlayer implements
         initListeners();
     }
 
+    /**
+     * Turn a stream into something VLC can open.
+     *
+     * <p>
+     * YouTube serves its adaptive formats in bounded byte ranges only: a plain GET, which is what
+     * VLC opens a stream with, is answered HTTP 403. The extractor therefore describes those as
+     * DASH manifests rather than URLs, and VLC reaches them through its adaptive demuxer once the
+     * manifest is on disk.
+     * </p>
+     *
+     * @return a URL, or the path of a manifest written to the cache directory
+     */
+    private String toPlayableLocation(final Stream stream) {
+        if (stream.isUrl()) {
+            return stream.getContent();
+        }
+
+        try {
+            final File manifest = new File(context.getCacheDir(),
+                    "vlc-dash-" + stream.getFormatId() + "-"
+                            + Math.abs(stream.getContent().hashCode()) + ".mpd");
+            final OutputStream os = new FileOutputStream(manifest);
+            try {
+                os.write(stream.getContent().getBytes("UTF-8"));
+            } finally {
+                os.close();
+            }
+            return manifest.getAbsolutePath();
+        } catch (final IOException e) {
+            Log.e(TAG, "Could not write the DASH manifest of format "
+                    + stream.getFormatId(), e);
+            return null;
+        }
+    }
+
     public void initPlayer(final boolean playOnReady) {
 
         if (mMediaPlayer != null && !mMediaPlayer.isReleased()) {
@@ -295,7 +335,7 @@ public abstract class BasePlayer implements
                 }
 
                 final VideoStream selectedStream = videoStreams.get(streamIndex);
-                streamUrl = selectedStream.getUrl();
+                streamUrl = toPlayableLocation(selectedStream);
                 playbackQuality = selectedStream.getResolution();
 
                 if (selectedStream.isVideoOnly() && !stream.getAudioStreams().isEmpty()) {
@@ -303,16 +343,25 @@ public abstract class BasePlayer implements
                     if (audioIndex < 0 || audioIndex >= stream.getAudioStreams().size()) {
                         audioIndex = 0;
                     }
-                    audioSlaveUrl = stream.getAudioStreams().get(audioIndex).getUrl();
+                    audioSlaveUrl = toPlayableLocation(
+                            stream.getAudioStreams().get(audioIndex));
                 }
             }
 
             Log.d(TAG, "playbackQuality: " + playbackQuality
-                    + ", separate audio track: " + (audioSlaveUrl != null));
+                    + ", separate audio track: " + (audioSlaveUrl != null)
+                    + ", location: " + streamUrl);
 
-            Media media = new Media(mLibVLC, Uri.parse(streamUrl));
+            // A manifest written to the cache is handed over as a path: routing it through Uri
+            // would leave VLC with a location that has no scheme, which it cannot open.
+            Media media = streamUrl != null && streamUrl.startsWith("/")
+                    ? new Media(mLibVLC, streamUrl)
+                    : new Media(mLibVLC, Uri.parse(streamUrl));
             if (audioSlaveUrl != null) {
-                media.addSlave(new Media.Slave(Media.Slave.Type.Audio, 1, audioSlaveUrl));
+                media.addSlave(new Media.Slave(Media.Slave.Type.Audio, 1,
+                        audioSlaveUrl.startsWith("/")
+                                ? Uri.fromFile(new File(audioSlaveUrl)).toString()
+                                : audioSlaveUrl));
             }
             mMediaPlayer.setMedia(media);
 
