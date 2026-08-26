@@ -40,7 +40,7 @@
 
     <SwitchPreference
         app:iconSpaceReserved="false"
-        android:defaultValue="false"
+        android:defaultValue="true"
         android:key="@string/fetch_adaptive_formats_key"
         android:summary="@string/fetch_adaptive_formats_summary"
         android:title="@string/fetch_adaptive_formats_title"/>

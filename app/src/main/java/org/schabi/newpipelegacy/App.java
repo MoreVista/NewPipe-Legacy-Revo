@@ -115,18 +115,13 @@ public class App extends MultiDexApplication {
     }
 
     /**
-     * Tell the extractor whether to offer the adaptive resolutions.
-     *
-     * <p>
-     * They are unplayable in practice -- YouTube serves only their first megabyte -- so the
-     * preference is off by default and exists to re-check that from time to time. Called at
-     * startup and again whenever the preference changes.
-     * </p>
+     * Tell the extractor whether to offer the adaptive resolutions. Called at startup and again
+     * whenever the preference changes.
      */
     public static void applyAdaptiveFormatsSetting(final Context context) {
         YoutubeStreamExtractor.setFetchAdaptiveFormats(
                 PreferenceManager.getDefaultSharedPreferences(context).getBoolean(
-                        context.getString(R.string.fetch_adaptive_formats_key), false));
+                        context.getString(R.string.fetch_adaptive_formats_key), true));
     }
 
     protected void setCookiesToDownloader(final DownloaderImpl downloader) {
